@@ -226,6 +226,7 @@
         <select id="anchor-tz">
           <option value="ET">Eastern Time (ET)</option>
           <option value="CT">Central Time (CT)</option>
+          <option value="MT">Mountain Time (MT)</option>
           <option value="PT">Pacific Time (PT)</option>
           <option value="GMT">London (GMT/BST)</option>
           <option value="CET">Brussels / Paris (CET)</option>
@@ -318,7 +319,7 @@
 <script>
 const SCRIPT_URL="https://script.google.com/a/macros/steadystreamslive.com/s/AKfycbwC4fUr-nHP9ApUwpc5tDomE8ga4Ar7WoNJuWGcNVLuRD1WOKUKX4RCihCeXklvV8Mv/exec";
 const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-const TZ_OFF={ET:0,CT:1,PT:3,GMT:-5,CET:-6,IST:-10.5,AEST:-16};
+const TZ_OFF={ET:0,CT:1,MT:2,PT:3,GMT:-5,CET:-6,IST:-10.5,AEST:-16};
 let submissions=[],blockCounts={},roster=[],offDays=[],readTypes={},dayOrders={},producerUnlocked=false;
 
 function toast(msg,ms=2500){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),ms);}

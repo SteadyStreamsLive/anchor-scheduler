@@ -157,10 +157,23 @@
     .day-read-toggle{display:flex;gap:3px;margin-left:auto;}
     .day-read-opt{padding:2px 8px;border-radius:3px;border:1px solid var(--border2);background:transparent;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Barlow',sans-serif;transition:all 0.15s;}
     .day-read-opt.active{background:rgba(200,240,0,0.15);border-color:rgba(200,240,0,0.4);color:var(--accent);}
-    .reorder-btns{display:flex;flex-direction:column;gap:2px;flex-shrink:0;}
-    .reorder-btn{background:none;border:1px solid var(--border2);border-radius:3px;color:var(--muted);cursor:pointer;font-size:10px;line-height:1;padding:2px 5px;transition:all 0.15s;font-family:'Barlow',sans-serif;}
-    .reorder-btn:hover{background:var(--dark3);color:var(--white);}
-    .reorder-btn:disabled{opacity:0.2;cursor:default;}
+    .reorder-btn:disabled{opacity:0;}
+    .day-anchor-row{cursor:grab;transition:opacity 0.15s;}
+    .day-anchor-row.dragging{opacity:0.4;cursor:grabbing;}
+    .day-anchor-row.drag-over{border-top:2px solid var(--accent);}
+    .drag-handle{color:var(--muted);font-size:14px;cursor:grab;padding:0 4px;flex-shrink:0;user-select:none;}
+    .drag-handle:hover{color:var(--accent);}
+    .detail-panel{background:var(--dark3);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-top:6px;display:none;}
+    .detail-panel.open{display:block;}
+    .detail-row{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;}
+    .detail-row:last-child{border-bottom:none;}
+    .detail-day{font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--muted);width:44px;flex-shrink:0;font-size:11px;}
+    .detail-val{color:var(--off-white);flex:1;}
+    .detail-note{color:var(--muted);font-size:11px;margin-left:4px;}
+    .detail-off{color:var(--red);}
+    .anchor-pill-btn{background:rgba(200,240,0,0.1);border:1px solid rgba(200,240,0,0.2);border-radius:99px;padding:3px 12px;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;font-family:'Barlow',sans-serif;transition:all 0.15s;}
+    .anchor-pill-btn:hover{background:rgba(200,240,0,0.2);}
+    .anchor-pill-btn.expanded{background:rgba(200,240,0,0.25);border-color:rgba(200,240,0,0.5);}
     @media(max-width:500px){.topbar{padding:0 1rem;gap:8px;}.logo-sub,.logo-divider{display:none;}.container{padding:1.25rem 1rem;}.producer-top{flex-direction:column;}.accent-btn{width:100%;text-align:center;}}
   </style>
 </head>
@@ -488,23 +501,58 @@ function getOrderedAvail(day){
   const order=dayOrders[day];
   return [...avail].sort((a,b)=>{
     const ai=order.indexOf(a.name),bi=order.indexOf(b.name);
-    if(ai===-1&&bi===-1)return 0;
-    if(ai===-1)return 1;
-    if(bi===-1)return -1;
+    if(ai===-1&&bi===-1)return 0; if(ai===-1)return 1; if(bi===-1)return -1;
     return ai-bi;
   });
 }
 
-function moveDayAnchor(day,anchorName,dir){
-  const avail=getOrderedAvail(day);
-  const names=avail.map(a=>a.name);
-  const idx=names.indexOf(anchorName);
-  if(idx===-1)return;
-  const newIdx=idx+dir;
-  if(newIdx<0||newIdx>=names.length)return;
-  names.splice(idx,1);names.splice(newIdx,0,anchorName);
-  dayOrders[day]=names;
-  renderDayBreakdown();
+function describeSubmissionDay(anchor,day){
+  const blocks=anchor.days[day];
+  if(!blocks||!blocks.length||blocks[0].type==='off') return {text:'Day off',off:true};
+  const parts=blocks.map(b=>{
+    if(b.type==='all') return 'Available all day'+(b.notes?' ('+b.notes+')':'');
+    if(b.type==='before') return 'Available until '+b.before+' '+anchor.tz+(b.notes?' ('+b.notes+')':'');
+    if(b.type==='unavailable') return 'Unavailable '+b.from+'–'+b.to+' '+anchor.tz+(b.notes?' ('+b.notes+')':'');
+    return '';
+  }).filter(Boolean);
+  return {text:parts.join(' | '),off:false};
+}
+
+function buildDetailHTML(anchor){
+  return DAYS.map(day=>{
+    const d=describeSubmissionDay(anchor,day);
+    return `<div class="detail-row">
+      <span class="detail-day">${day.slice(0,3)}</span>
+      <span class="${d.off?'detail-off':'detail-val'}">${d.text}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleDetail(anchorName,day){
+  const id=`detail-${day}-${anchorName.replace(/\s/g,'_')}`;
+  const btn=document.getElementById(`pill-${day}-${anchorName.replace(/\s/g,'_')}`);
+  const panel=document.getElementById(id);
+  if(!panel)return;
+  const isOpen=panel.classList.contains('open');
+  // close all panels for this day first
+  document.querySelectorAll(`[id^="detail-${day}-"]`).forEach(p=>{p.classList.remove('open');});
+  document.querySelectorAll(`[id^="pill-${day}-"]`).forEach(b=>{b.classList.remove('expanded');});
+  if(!isOpen){panel.classList.add('open');btn&&btn.classList.add('expanded');}
+}
+
+let dragSrc=null,dragDay=null;
+function onDragStart(e,day,name){dragSrc=name;dragDay=day;e.currentTarget.classList.add('dragging');e.dataTransfer.effectAllowed='move';}
+function onDragEnd(e){e.currentTarget.classList.remove('dragging');document.querySelectorAll('.day-anchor-row').forEach(r=>r.classList.remove('drag-over'));}
+function onDragOver(e,day,name){if(dragDay!==day||dragSrc===name)return;e.preventDefault();e.currentTarget.classList.add('drag-over');}
+function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
+function onDrop(e,day,name){
+  e.currentTarget.classList.remove('drag-over');
+  if(dragDay!==day||dragSrc===name)return;
+  const avail=getOrderedAvail(day),names=avail.map(a=>a.name);
+  const fromIdx=names.indexOf(dragSrc),toIdx=names.indexOf(name);
+  if(fromIdx===-1||toIdx===-1)return;
+  names.splice(fromIdx,1);names.splice(toIdx,0,dragSrc);
+  dayOrders[day]=names;dragSrc=null;dragDay=null;renderDayBreakdown();
 }
 
 function renderDayBreakdown(){
@@ -523,22 +571,33 @@ function renderDayBreakdown(){
     if(!avail.length){
       return `<div class="day-row"><div class="day-row-name">${day.slice(0,3)}</div><div class="day-row-date">${ds}</div><div class="day-anchors"><span class="day-none">No one available</span></div><div class="day-count bad">None</div></div>`;
     }
-    const anchorRows=avail.map((a,i)=>{
+    const anchorRows=avail.map((a)=>{
       const rt=getDayRead(a.name,day);
-      const isFirst=i===0,isLast=i===avail.length-1;
-      return `<div class="day-anchor-row">
-        <div class="reorder-btns">
-          <button class="reorder-btn" onclick="moveDayAnchor('${day}','${a.name}',-1)" ${isFirst?'disabled':''}>up</button>
-          <button class="reorder-btn" onclick="moveDayAnchor('${day}','${a.name}',1)" ${isLast?'disabled':''}>dn</button>
-        </div>
-        <span class="day-anchor-pill">${a.name}</span>
+      const safeId=a.name.replace(/\s/g,'_');
+      const detailHTML=buildDetailHTML(a);
+      return `<div class="day-anchor-row" draggable="true"
+        ondragstart="onDragStart(event,'${day}','${a.name}')"
+        ondragend="onDragEnd(event)"
+        ondragover="onDragOver(event,'${day}','${a.name}')"
+        ondragleave="onDragLeave(event)"
+        ondrop="onDrop(event,'${day}','${a.name}')">
+        <span class="drag-handle" title="Drag to reorder">&#8597;</span>
+        <button class="anchor-pill-btn" id="pill-${day}-${safeId}" onclick="toggleDetail('${a.name}','${day}')">${a.name}</button>
         <div class="day-read-toggle">
           <button class="day-read-opt ${rt==='full'?'active':''}" onclick="setDayRead('${a.name}','${day}','full',this)">Full 1hr</button>
           <button class="day-read-opt ${rt==='half'?'active':''}" onclick="setDayRead('${a.name}','${day}','half',this)">Half 30m</button>
         </div>
+        <div class="detail-panel" id="detail-${day}-${safeId}">${detailHTML}</div>
       </div>`;
     }).join('');
-    return `<div class="day-row"><div class="day-row-name">${day.slice(0,3)}</div><div class="day-row-date">${ds}</div><div class="day-row-anchors">${anchorRows}</div><div class="day-count ${cc}">${label}</div></div>`;
+    return `<div class="day-row" style="flex-direction:column;align-items:stretch;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:${avail.length?'6px':'0'};">
+        <div class="day-row-name">${day.slice(0,3)}</div>
+        <div class="day-row-date">${ds}</div>
+        <div class="day-count ${cc}" style="margin-left:auto;">${label}</div>
+      </div>
+      <div class="day-row-anchors">${anchorRows}</div>
+    </div>`;
   }).join('');
 }
 

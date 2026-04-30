@@ -361,21 +361,17 @@ function checkPassword(){
 function getWeekMonday(){return document.getElementById('week-start').value;}
 function nextMonday(){
   const d=new Date();
-  const dow=d.getDay(); // 0=Sun,1=Mon,...,3=Wed,...,6=Sat
-  // Flip to next week's Monday on Wednesday (3) or later
-  // Before Wednesday, show current week's Monday
-  let daysToMon;
-  if(dow===0) daysToMon=1; // Sunday -> next Mon
-  else if(dow<=2) daysToMon=8-dow-(dow===1?7:0); // Mon/Tue -> this week's Mon (already past, show current)
-  else daysToMon=8-dow; // Wed-Sat -> next Mon
-  // Simpler: if day>=3 (Wed+), next Monday; else this Monday
+  const dow=d.getDay(); // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
+  let nd=new Date(d);
   if(dow>=3||dow===0){
-    // next Monday
-    const nd=new Date(d); nd.setDate(d.getDate()+((8-dow)%7||7)); return nd.toISOString().split('T')[0];
+    // Wed, Thu, Fri, Sat, Sun -> show NEXT Monday
+    const daysUntilMon=dow===0?1:8-dow;
+    nd.setDate(d.getDate()+daysUntilMon);
   } else {
-    // this Monday (Mon or Tue - current week)
-    const nd=new Date(d); nd.setDate(d.getDate()-(dow-1)); return nd.toISOString().split('T')[0];
+    // Mon, Tue -> show THIS Monday
+    nd.setDate(d.getDate()-(dow-1));
   }
+  return nd.toISOString().split('T')[0];
 }
 
 function mondayToWeekRange(wm){

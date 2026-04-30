@@ -511,8 +511,19 @@ function describeSubmissionDay(anchor,day){
   if(!blocks||!blocks.length||blocks[0].type==='off') return {text:'Day off',off:true};
   const parts=blocks.map(b=>{
     if(b.type==='all') return 'Available all day'+(b.notes?' ('+b.notes+')':'');
-    if(b.type==='before') return 'Available until '+b.before+' '+anchor.tz+(b.notes?' ('+b.notes+')':'');
-    if(b.type==='unavailable') return 'Unavailable '+b.from+'–'+b.to+' '+anchor.tz+(b.notes?' ('+b.notes+')':'');
+    if(b.type==='before'){
+      const et=toET(b.before,anchor.tz);
+      const [h,m]=et.split(':').map(Number);
+      const ap=h>=12?'PM':'AM',h12=h>12?h-12:(h===0?12:h);
+      const fmt=`${h12}:${String(m).padStart(2,'0')} ${ap} ET`;
+      return 'Available until '+fmt+(b.notes?' ('+b.notes+')':'');
+    }
+    if(b.type==='unavailable'){
+      const etFrom=toET(b.from,anchor.tz);
+      const etTo=toET(b.to,anchor.tz);
+      const fmtT=(t)=>{const [h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM',h12=h>12?h-12:(h===0?12:h);return `${h12}:${String(m).padStart(2,'0')} ${ap}`;};
+      return 'Unavailable '+fmtT(etFrom)+' - '+fmtT(etTo)+' ET'+(b.notes?' ('+b.notes+')':'');
+    }
     return '';
   }).filter(Boolean);
   return {text:parts.join(' | '),off:false};

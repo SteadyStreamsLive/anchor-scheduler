@@ -208,6 +208,7 @@
     <div class="action-row" id="action-row" style="display:none;">
       <button class="ghost-btn" onclick="copySchedule()">Copy</button>
       <button class="ghost-btn" onclick="saveToSheet()">Save to Sheet</button>
+      <button class="accent-btn" onclick="pushToCalendar()" id="cal-btn">Push to Calendar</button>
     </div>
   </div>
 </div>
@@ -392,6 +393,40 @@
 
   function copySchedule(){if(window._sched)navigator.clipboard.writeText(window._sched).then(()=>toast('Copied!'));}
   async function saveToSheet(){const wm=getWeekMonday();if(!wm||!window._sched)return;try{const r=await api({action:'saveSchedule',weekMonday:wm,scheduleText:window._sched});toast(r.success?'Saved to Sheet!':'Error: '+r.error);}catch(e){toast('Connection error.');}}
+
+  async function pushToCalendar(){
+    const wm=getWeekMonday(); if(!wm||!window._sched){toast('Generate a schedule first.');return;}
+    const btn=document.getElementById('cal-btn'); btn.textContent='Pushing...'; btn.disabled=true;
+    const sd=new Date(wm+'T12:00:00'), events=[];
+    const WORK=DAYS.filter(d=>!OFF_DAYS.includes(d));
+    const toISO=(dateStr,mins)=>{const h=Math.floor(mins/60),m=mins%60;return dateStr+'T'+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':00';};
+    WORK.forEach((day,di)=>{
+      const dt=new Date(sd); dt.setDate(sd.getDate()+di);
+      const ds=dt.toISOString().split('T')[0];
+      const avail=submissions.filter(a=>getWindows(a,day));
+      events.push({title:'Ops Prep',start:ds+'T11:00:00',end:ds+'T12:00:00',description:'NewsForce Ops Prep'});
+      let cur=12*60;
+      avail.forEach((anchor,idx)=>{
+        const wins=getWindows(anchor,day),TOT=90,PREP=30,BRK=30;
+        for(const w of wins){
+          const ss=Math.max(cur,w.start);
+          if(ss+TOT<=w.end&&ss+TOT<=19*60){
+            const pe=ss+PREP,re=ss+TOT;
+            events.push({title:anchor.name+' - Tech Check',start:toISO(ds,ss),end:toISO(ds,pe),description:'Live to Tape Tech Check'});
+            events.push({title:anchor.name+' - Read',start:toISO(ds,pe),end:toISO(ds,re),description:'Live to Tape Read'});
+            cur=re;
+            if(idx<avail.length-1){events.push({title:'Break / SOT Check',start:toISO(ds,cur),end:toISO(ds,cur+BRK),description:'Break and SOT Check'});cur+=BRK;}
+            break;
+          }
+        }
+      });
+    });
+    try{
+      const r=await api({action:'pushToCalendar',weekMonday:wm,events});
+      toast(r.success?'Calendar updated!':'Error: '+r.error,3000);
+    }catch(e){toast('Connection error.');}
+    btn.textContent='Push to Calendar'; btn.disabled=false;
+  }
 
   buildDays();
   document.getElementById('week-start').value=nextMonday();

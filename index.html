@@ -622,19 +622,30 @@ function onDragEnd(e){e.currentTarget.classList.remove('dragging');document.quer
 function onDragOver(e,day,name){if(dragDay!==day||dragSrc===name)return;e.preventDefault();e.currentTarget.classList.add('drag-over');}
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
 function simulateOrder(orderedAnchors,day){
-  // Returns {fitted, conflicts} where conflicts is list of anchor names that dont fit
+  // Strictly simulate the schedule and return list of anchor names that cannot be placed
   let cur=12*60;const conflicts=[];
   for(let i=0;i<orderedAnchors.length;i++){
     const anchor=orderedAnchors[i];
     const wins=getWindows(anchor,day);
+    if(!wins){conflicts.push(anchor.name);continue;}
     const isHalf=getDayRead(anchor.name,day)==='half';
-    const READ=isHalf?30:60,PREP=30,TOT=PREP+READ,BRK=i<orderedAnchors.length-1?30:0;
+    const READ=isHalf?30:60,PREP=30,TOT=PREP+READ;
+    // Check break needed before this anchor
+    const BRK=i>0?30:0;
+    const startFrom=cur;
     let placed=false;
     for(const w of wins){
-      const ss=Math.max(cur,w.start);
-      if(ss+TOT<=w.end&&ss+TOT<=19*60){cur=ss+TOT+BRK;placed=true;break;}
+      const ss=Math.max(startFrom,w.start);
+      if(ss+TOT<=w.end&&ss+TOT<=19*60){
+        cur=ss+TOT+BRK;placed=true;break;
+      }
     }
-    if(!placed) conflicts.push(anchor.name);
+    if(!placed){
+      conflicts.push(anchor.name);
+      // Advance cursor to end of this anchor's last window so next anchor can still try
+      const lastWin=wins[wins.length-1];
+      cur=Math.max(cur,lastWin.end);
+    }
   }
   return conflicts;
 }
@@ -648,7 +659,9 @@ function toastError(msg){
 function onDrop(e,day,name){
   e.currentTarget.classList.remove('drag-over');
   if(dragDay!==day||dragSrc===name){dragSrc=null;dragDay=null;return;}
-  const avail=getOrderedAvail(day),names=avail.map(a=>a.name);
+
+  const avail=getOrderedAvail(day);
+  const names=avail.map(a=>a.name);
   const fromIdx=names.indexOf(dragSrc),toIdx=names.indexOf(name);
   if(fromIdx===-1||toIdx===-1){dragSrc=null;dragDay=null;return;}
 
@@ -657,22 +670,22 @@ function onDrop(e,day,name){
   proposed.splice(fromIdx,1);proposed.splice(toIdx,0,dragSrc);
   const proposedAnchors=proposed.map(n=>avail.find(a=>a.name===n)).filter(Boolean);
 
-  // Validate — check if anyone loses their spot compared to current order
+  // Simulate both orders strictly
   const currentConflicts=simulateOrder(avail,day);
   const newConflicts=simulateOrder(proposedAnchors,day);
 
-  // If the new order causes more conflicts, reject and snap back
-  if(newConflicts.length>currentConflicts.length){
-    const extra=newConflicts.filter(n=>!currentConflicts.includes(n));
-    toastError(`${extra.join(', ')} ${extra.length>1?'don't':'doesn't'} fit in this slot — availability conflict`);
+  // Reject if proposed order causes any new conflicts
+  const newlyConflicted=newConflicts.filter(n=>!currentConflicts.includes(n));
+  if(newlyConflicted.length>0){
+    toastError(`${newlyConflicted.join(', ')} ${newlyConflicted.length>1?'don't':'doesn't'} fit in this position — availability conflict`);
     dragSrc=null;dragDay=null;
-    renderDayBreakdown(); // snap back
+    renderDayBreakdown();
     return;
   }
 
-  // Also warn if the dragged anchor itself won't fit but don't block if no net loss
+  // Warn if dragged anchor itself is in conflict even if no net change
   if(newConflicts.includes(dragSrc)){
-    toastError(`${dragSrc} may not fit here — check availability`);
+    toastError(`Warning: ${dragSrc} may be tight in this slot`);
   }
 
   dayOrders[day]=proposed;dragSrc=null;dragDay=null;renderDayBreakdown();

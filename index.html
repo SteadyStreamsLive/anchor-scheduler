@@ -221,7 +221,13 @@
         <span class="week-banner-label">Submitting for</span>
         <span class="week-banner-dates" id="form-week-label">Loading...</span>
       </div>
-      <div class="field"><label>Your name</label><input type="text" id="anchor-name" placeholder="e.g. Patrick" /></div>
+      <div class="field">
+        <label>Your name</label>
+        <select id="anchor-name">
+          <option value="">Loading anchors...</option>
+        </select>
+        <div id="name-error" style="font-size:12px;color:var(--red);margin-top:6px;display:none;">Could not load anchor list. Please refresh the page.</div>
+      </div>
       <div class="field">
         <label>Your timezone</label>
         <select id="anchor-tz">
@@ -842,8 +848,8 @@ function describeBlocks(blocks){
 }
 
 function showConfirm(){
-  const name=document.getElementById('anchor-name').value.trim();
-  if(!name){alert('Please enter your name.');return;}
+  const name=document.getElementById('anchor-name').value;
+  if(!name){alert('Please select your name from the dropdown.');return;}
   const days={};DAYS.forEach(day=>{days[day]=getDayBlocks(day);});
   const summary=document.getElementById('confirm-summary');
   summary.innerHTML=`<div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">${name} &mdash; ${document.getElementById('anchor-tz').value}</div>`+
@@ -860,8 +866,26 @@ function showConfirm(){
   document.getElementById('form-step2').style.display='block';
 }
 
+async function loadFormRoster(){
+  const select = document.getElementById('anchor-name');
+  const errEl = document.getElementById('name-error');
+  try {
+    const res = await api({action:'getRoster'});
+    if(res.success && res.roster && res.roster.length){
+      select.innerHTML = '<option value="">Select your name...</option>' +
+        res.roster.map(n=>`<option value="${n}">${n}</option>`).join('');
+    } else {
+      select.innerHTML = '<option value="">No anchors found — contact ops</option>';
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    select.innerHTML = '<option value="">Could not load — try refreshing</option>';
+    errEl.style.display = 'block';
+  }
+}
+
 async function submitForm(){
-  const name=document.getElementById('anchor-name').value.trim();
+  const name=document.getElementById('anchor-name').value;
   const tz=document.getElementById('anchor-tz').value;
   const days={};DAYS.forEach(day=>{days[day]=getDayBlocks(day);});
   const btn=document.getElementById('submit-btn');btn.disabled=true;btn.textContent='Submitting...';
@@ -1071,6 +1095,7 @@ async function pushToCalendar(){
 buildDays();
 document.getElementById('week-start').value=nextMonday();
 buildOffDayGrid();
+loadFormRoster();
 </script>
 </body>
 </html>

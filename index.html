@@ -372,15 +372,21 @@ function nextMonday(){
   const d=new Date();
   const dow=d.getDay(); // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
   let nd=new Date(d);
-  if(dow>=3||dow===0){
-    // Wed, Thu, Fri, Sat, Sun -> show NEXT Monday
-    const daysUntilMon=dow===0?1:8-dow;
-    nd.setDate(d.getDate()+daysUntilMon);
-  } else {
-    // Mon, Tue -> show THIS Monday
+  if(dow===0){
+    // Sunday -> next Monday is tomorrow
+    nd.setDate(d.getDate()+1);
+  } else if(dow===1||dow===2){
+    // Mon or Tue -> this week's Monday
     nd.setDate(d.getDate()-(dow-1));
+  } else {
+    // Wed, Thu, Fri, Sat -> next Monday
+    nd.setDate(d.getDate()+(8-dow));
   }
-  return nd.toISOString().split('T')[0];
+  // Format as YYYY-MM-DD in local time to avoid timezone shift
+  const y=nd.getFullYear();
+  const m=String(nd.getMonth()+1).padStart(2,'0');
+  const day=String(nd.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
 }
 
 function mondayToWeekRange(wm){

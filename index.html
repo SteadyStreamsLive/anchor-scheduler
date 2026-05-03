@@ -932,7 +932,7 @@ function generateSchedule(){
     out+=`Ops Prep ${fmt(11*60)} - ${fmt(12*60)} ET (${fmtPT(11*60)} - ${fmtPT(12*60)} PT)\n`;
     window._calEvents.push({title:'Ops Prep',start:toISO(11*60),end:toISO(12*60),description:'NewsForce Ops Prep'});
 
-    let cur=12*60;const notes=[],avail=getOrderedAvail(day);
+    let cur=12*60;const notes=[],avail=getOrderedAvail(day),scheduledAnchors=new Set();
 
     avail.forEach((anchor,idx)=>{
       const wins=getWindows(anchor,day);
@@ -950,7 +950,7 @@ function generateSchedule(){
 
           // Only add break if there are more anchors that can actually be placed after this one
           // Find the next anchor that can actually fit after current cursor
-          const remainingAnchors=avail.slice(idx+1);
+          const remainingAnchors=avail.slice(idx+1).filter(a=>!scheduledAnchors.has(a.name));
           let nextFittingAnchor=null;
           for(const nextAnchor of remainingAnchors){
             const nextWins=getWindows(nextAnchor,day);

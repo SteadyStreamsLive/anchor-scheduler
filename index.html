@@ -159,6 +159,13 @@
     .day-read-toggle{display:flex;gap:3px;margin-left:auto;}
     .day-read-opt{padding:2px 8px;border-radius:3px;border:1px solid var(--border2);background:transparent;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Barlow',sans-serif;transition:all 0.15s;}
     .day-read-opt.active{background:rgba(200,240,0,0.15);border-color:rgba(200,240,0,0.4);color:var(--accent);}
+    .exclude-btn{background:none;border:1px solid var(--border2);border-radius:50%;width:16px;height:16px;font-size:10px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s;line-height:1;padding:0;}
+    .exclude-btn:hover{background:rgba(255,59,48,0.15);border-color:var(--red);color:var(--red);}
+    .confirm-exclude{background:var(--dark3);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;margin-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--off-white);}
+    .confirm-exclude-btns{display:flex;gap:6px;flex-shrink:0;}
+    .confirm-yes{padding:3px 10px;background:var(--red);color:white;border:none;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:'Barlow',sans-serif;}
+    .confirm-no{padding:3px 10px;background:transparent;color:var(--muted);border:1px solid var(--border2);border-radius:3px;font-size:11px;cursor:pointer;font-family:'Barlow',sans-serif;}
+    .anchor-pill-excluded{background:rgba(255,59,48,0.08);border:1px solid rgba(255,59,48,0.2);border-radius:99px;padding:3px 12px;font-size:12px;font-weight:500;color:var(--red);text-decoration:line-through;opacity:0.6;}
     .reorder-btn:disabled{opacity:0;}
     .day-anchor-row{cursor:grab;transition:opacity 0.15s;}
     .day-anchor-row.dragging{opacity:0.4;cursor:grabbing;}
@@ -337,7 +344,7 @@
 const SCRIPT_URL="https://script.google.com/a/macros/steadystreamslive.com/s/AKfycbwC4fUr-nHP9ApUwpc5tDomE8ga4Ar7WoNJuWGcNVLuRD1WOKUKX4RCihCeXklvV8Mv/exec";
 const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const TZ_OFF={ET:0,CT:1,MT:2,PT:3,GMT:-5,CET:-6,IST:-10.5,AEST:-16};
-let submissions=[],blockCounts={},roster=[],offDays=[],readTypes={},dayOrders={},producerUnlocked=false;
+let submissions=[],blockCounts={},roster=[],offDays=[],readTypes={},dayOrders={},dayExclusions={},producerUnlocked=false;
 
 function toast(msg,ms=2500){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),ms);}
 async function api(payload){const r=await fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)});return r.json();}
@@ -503,6 +510,27 @@ async function deleteSubmission(name){
   }catch(e){toast('Connection error.');}
 }
 
+function toggleExcludeConfirm(anchorName,day,show){
+  const id=`excconf-${day}-${anchorName.replace(/\s/g,'_')}`;
+  const el=document.getElementById(id);
+  if(el) el.style.display=show?'flex':'none';
+}
+
+function excludeAnchorFromDay(anchorName,day){
+  if(!dayExclusions[day]) dayExclusions[day]=new Set();
+  dayExclusions[day].add(anchorName);
+  renderDayBreakdown();
+}
+
+function restoreAnchorToDay(anchorName,day){
+  if(dayExclusions[day]) dayExclusions[day].delete(anchorName);
+  renderDayBreakdown();
+}
+
+function isExcluded(anchorName,day){
+  return dayExclusions[day]&&dayExclusions[day].has(anchorName);
+}
+
 function setDayRead(anchorName,day,type,btn){
   if(!readTypes[anchorName])readTypes[anchorName]={};
   readTypes[anchorName][day]=type;
@@ -516,7 +544,7 @@ function getDayRead(anchorName,day){
 }
 
 function getOrderedAvail(day){
-  const avail=submissions.filter(a=>getWindows(a,day));
+  const avail=submissions.filter(a=>getWindows(a,day)&&!isExcluded(a.name,day));
   if(!avail.length) return avail;
 
   // If producer has manually set an order, respect it
@@ -727,8 +755,22 @@ function renderDayBreakdown(){
     const avail=getOrderedAvail(day);
     const count=avail.length,cc=count>=3?'ok':count>=1?'warn':'bad';
     const label=count===0?'None':count===1?'1 anchor':`${count} anchors`;
+    // Show excluded anchors separately
+    const excluded=submissions.filter(a=>getWindows(a,day)&&isExcluded(a.name,day));
+    const excludedHTML=excluded.map(a=>`<div class="day-anchor-row" style="opacity:0.5;">
+      <span class="anchor-pill-excluded">${a.name}</span>
+      <button class="confirm-no" style="font-size:10px;padding:2px 8px;" onclick="restoreAnchorToDay('${a.name}','${day}')">Restore</button>
+    </div>`).join('');
+
     if(!avail.length){
-      return `<div class="day-row"><div class="day-row-name">${day.slice(0,3)}</div><div class="day-row-date">${ds}</div><div class="day-anchors"><span class="day-none">No one available</span></div><div class="day-count bad">None</div></div>`;
+      return `<div class="day-row" style="flex-direction:column;align-items:stretch;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+          <div class="day-row-name">${day.slice(0,3)}</div><div class="day-row-date">${ds}</div>
+          <div class="day-count bad" style="margin-left:auto;">None</div>
+        </div>
+        <div class="day-row-anchors"><span class="day-none">No one scheduled</span></div>
+        ${excludedHTML}
+      </div>`;
     }
     const anchorRows=avail.map((a)=>{
       const rt=getDayRead(a.name,day);
@@ -746,6 +788,14 @@ function renderDayBreakdown(){
           <button class="day-read-opt ${rt==='full'?'active':''}" onclick="setDayRead('${a.name}','${day}','full',this)">Full 1hr</button>
           <button class="day-read-opt ${rt==='half'?'active':''}" onclick="setDayRead('${a.name}','${day}','half',this)">Half 30m</button>
         </div>
+        <button class="exclude-btn" onclick="toggleExcludeConfirm('${a.name}','${day}',true)" title="Remove from this day">x</button>
+        <div class="confirm-exclude" id="excconf-${day}-${safeId}" style="display:none;">
+          <span>Remove ${a.name} from ${day}?</span>
+          <div class="confirm-exclude-btns">
+            <button class="confirm-no" onclick="toggleExcludeConfirm('${a.name}','${day}',false)">Cancel</button>
+            <button class="confirm-yes" onclick="excludeAnchorFromDay('${a.name}','${day}')">Remove</button>
+          </div>
+        </div>
         <div class="detail-panel" id="detail-${day}-${safeId}">${detailHTML}</div>
       </div>`;
     }).join('');
@@ -757,6 +807,7 @@ function renderDayBreakdown(){
         <div class="day-count ${cc}" style="margin-left:auto;">${label}</div>
       </div>
       <div class="day-row-anchors">${anchorRows}</div>
+      ${excludedHTML}
     </div>`;
   }).join('');
 }
@@ -989,6 +1040,23 @@ function generateSchedule(){
     if(!avail.length)out+=`* No anchors available.\n`;
     if(notes.length)out+='\n'+notes.join('\n')+'\n';
     out+='\n';
+  });
+
+  // Remove any trailing break at end of each day from calEvents
+  // Group by date and remove last event if it's a break
+  const eventsByDate={};
+  window._calEvents.forEach(ev=>{
+    const d=ev.start.split('T')[0];
+    if(!eventsByDate[d])eventsByDate[d]=[];
+    eventsByDate[d].push(ev);
+  });
+  window._calEvents=[];
+  Object.values(eventsByDate).forEach(dayEvents=>{
+    const last=dayEvents[dayEvents.length-1];
+    if(last&&(last.title==='Break / SOT Check'||last.title==='Ops Break / SOT Check')){
+      dayEvents.pop();
+    }
+    window._calEvents.push(...dayEvents);
   });
 
   document.getElementById('schedule-box').innerHTML=`<pre>${out.trim()}</pre>`;

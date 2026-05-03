@@ -159,6 +159,7 @@
     .day-read-toggle{display:flex;gap:3px;margin-left:auto;}
     .day-read-opt{padding:2px 8px;border-radius:3px;border:1px solid var(--border2);background:transparent;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Barlow',sans-serif;transition:all 0.15s;}
     .day-read-opt.active{background:rgba(200,240,0,0.15);border-color:rgba(200,240,0,0.4);color:var(--accent);}
+    .day-read-off.active{background:rgba(255,59,48,0.15)!important;border-color:rgba(255,59,48,0.4)!important;color:var(--red)!important;}
     .exclude-btn{background:none;border:1px solid var(--border2);border-radius:50%;width:16px;height:16px;font-size:10px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s;line-height:1;padding:0;}
     .exclude-btn:hover{background:rgba(255,59,48,0.15);border-color:var(--red);color:var(--red);}
     .confirm-exclude{background:var(--dark3);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;margin-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--off-white);}
@@ -536,15 +537,24 @@ function setDayRead(anchorName,day,type,btn){
   readTypes[anchorName][day]=type;
   btn.closest('.day-read-toggle').querySelectorAll('.day-read-opt').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
+  // Off means exclude from this day
+  if(type==='off'){
+    if(!dayExclusions[day])dayExclusions[day]=new Set();
+    dayExclusions[day].add(anchorName);
+  } else {
+    if(dayExclusions[day])dayExclusions[day].delete(anchorName);
+  }
+  renderDayBreakdown();
 }
 
 function getDayRead(anchorName,day){
-  if(readTypes[anchorName]&&readTypes[anchorName][day])return readTypes[anchorName][day];
+  if(isExcluded(anchorName,day))return 'off';
+  if(readTypes[anchorName]&&readTypes[anchorName][day]&&readTypes[anchorName][day]!=='off')return readTypes[anchorName][day];
   return 'full';
 }
 
 function getOrderedAvail(day){
-  const avail=submissions.filter(a=>getWindows(a,day)&&!isExcluded(a.name,day));
+  const avail=submissions.filter(a=>getWindows(a,day));
   if(!avail.length) return avail;
 
   // If producer has manually set an order, respect it
@@ -753,14 +763,9 @@ function renderDayBreakdown(){
       return `<div class="day-row"><div class="day-row-name">${day.slice(0,3)}</div><div class="day-row-date">${ds}</div><span class="day-off-pill">Day Off</span></div>`;
     }
     const avail=getOrderedAvail(day);
-    const count=avail.length,cc=count>=3?'ok':count>=1?'warn':'bad';
+    const activeCount=avail.filter(a=>!isExcluded(a.name,day)).length,count=activeCount,cc=count>=3?'ok':count>=1?'warn':'bad';
     const label=count===0?'None':count===1?'1 anchor':`${count} anchors`;
-    // Show excluded anchors separately
-    const excluded=submissions.filter(a=>getWindows(a,day)&&isExcluded(a.name,day));
-    const excludedHTML=excluded.map(a=>`<div class="day-anchor-row" style="opacity:0.5;">
-      <span class="anchor-pill-excluded">${a.name}</span>
-      <button class="confirm-no" style="font-size:10px;padding:2px 8px;" onclick="restoreAnchorToDay('${a.name}','${day}')">Restore</button>
-    </div>`).join('');
+    const excludedHTML='';
 
     if(!avail.length){
       return `<div class="day-row" style="flex-direction:column;align-items:stretch;">
@@ -787,14 +792,7 @@ function renderDayBreakdown(){
         <div class="day-read-toggle">
           <button class="day-read-opt ${rt==='full'?'active':''}" onclick="setDayRead('${a.name}','${day}','full',this)">Full 1hr</button>
           <button class="day-read-opt ${rt==='half'?'active':''}" onclick="setDayRead('${a.name}','${day}','half',this)">Half 30m</button>
-        </div>
-        <button class="exclude-btn" onclick="toggleExcludeConfirm('${a.name}','${day}',true)" title="Remove from this day">x</button>
-        <div class="confirm-exclude" id="excconf-${day}-${safeId}" style="display:none;">
-          <span>Remove ${a.name} from ${day}?</span>
-          <div class="confirm-exclude-btns">
-            <button class="confirm-no" onclick="toggleExcludeConfirm('${a.name}','${day}',false)">Cancel</button>
-            <button class="confirm-yes" onclick="excludeAnchorFromDay('${a.name}','${day}')">Remove</button>
-          </div>
+          <button class="day-read-opt day-read-off ${rt==='off'?'active':''}" onclick="setDayRead('${a.name}','${day}','off',this)">Off</button>
         </div>
         <div class="detail-panel" id="detail-${day}-${safeId}">${detailHTML}</div>
       </div>`;
@@ -983,7 +981,7 @@ function generateSchedule(){
     out+=`Ops Prep ${fmt(11*60)} - ${fmt(12*60)} ET (${fmtPT(11*60)} - ${fmtPT(12*60)} PT)\n`;
     window._calEvents.push({title:'Ops Prep',start:toISO(11*60),end:toISO(12*60),description:'NewsForce Ops Prep'});
 
-    let cur=12*60;const notes=[],avail=getOrderedAvail(day),scheduledAnchors=new Set();
+    let cur=12*60;const notes=[],avail=getOrderedAvail(day).filter(a=>!isExcluded(a.name,day)),scheduledAnchors=new Set();
 
     avail.forEach((anchor,idx)=>{
       const wins=getWindows(anchor,day);

@@ -430,6 +430,7 @@ function toggleOffDay(day,el){
   if(offDays.includes(day))offDays=offDays.filter(d=>d!==day);
   else offDays.push(day);
   renderDayBreakdown();
+  saveSettings();
 }
 
 // ROSTER
@@ -545,6 +546,7 @@ function setDayRead(anchorName,day,type,btn){
     if(dayExclusions[day])dayExclusions[day].delete(anchorName);
   }
   renderDayBreakdown();
+  saveSettings();
 }
 
 function getDayRead(anchorName,day){
@@ -569,6 +571,14 @@ function getOrderedAvail(day){
 
   // Auto-optimize: try all permutations and pick the one that fits the most anchors
   // ending at the earliest time. Uses greedy simulation.
+  // European anchors (CET, GMT) get priority for earlier slots
+  const EU_TZ = ['CET','GMT'];
+  const euroFirst = [...avail].sort((a,b)=>{
+    const aEu = EU_TZ.includes(a.tz)?0:1;
+    const bEu = EU_TZ.includes(b.tz)?0:1;
+    return aEu-bEu;
+  });
+
   function simulateDay(orderedAnchors){
     let cur=12*60, fitted=0, endTime=12*60;
     for(let i=0;i<orderedAnchors.length;i++){
@@ -602,16 +612,18 @@ function getOrderedAvail(day){
   let bestOrder=avail, bestFitted=0, bestEnd=19*60;
 
   if(avail.length<=5){
-    // Try all permutations
-    permutations(avail).forEach(perm=>{
+    // Try all permutations starting from euro-priority order
+    permutations(euroFirst).forEach(perm=>{
       const {fitted,endTime}=simulateDay(perm);
       if(fitted>bestFitted||(fitted===bestFitted&&endTime<bestEnd)){
         bestFitted=fitted; bestEnd=endTime; bestOrder=perm;
       }
     });
   } else {
-    // Greedy: sort by earliest available window start time
-    bestOrder=[...avail].sort((a,b)=>{
+    // Greedy: sort by European first, then earliest available window
+    bestOrder=[...euroFirst].sort((a,b)=>{
+      const aEu=EU_TZ.includes(a.tz)?0:1, bEu=EU_TZ.includes(b.tz)?0:1;
+      if(aEu!==bEu) return aEu-bEu;
       const aw=getWindows(a,day),bw=getWindows(b,day);
       const aStart=aw?Math.max(12*60,aw[0].start):19*60;
       const bStart=bw?Math.max(12*60,bw[0].start):19*60;
@@ -745,11 +757,13 @@ function onDrop(e,day,name){
   }
 
   dayOrders[day]=proposed;dragSrc=null;dragDay=null;renderDayBreakdown();
+  saveSettings();
 }
 
 function resetDayOrder(day){
   delete dayOrders[day];
   renderDayBreakdown();
+  saveSettings();
 }
 
 function renderDayBreakdown(){
@@ -963,6 +977,41 @@ function getWindows(anchor,day){
   return wins.length?wins:null;
 }
 
+async function saveSettings(){
+  const wm=getWeekMonday(); if(!wm) return;
+  const settings={
+    offDays: offDays,
+    dayOrders: Object.fromEntries(Object.entries(dayOrders).map(([k,v])=>[k,v])),
+    readTypes: Object.fromEntries(Object.entries(readTypes).map(([k,v])=>[k,typeof v==='object'?Object.fromEntries(Object.entries(v)):v])),
+    dayExclusions: Object.fromEntries(Object.entries(dayExclusions).map(([k,v])=>[k,[...v]]))
+  };
+  try{ await api({action:'saveSettings',weekMonday:wm,settings}); }catch(e){ console.log('Settings save error',e); }
+}
+
+async function loadSettings(){
+  const wm=getWeekMonday(); if(!wm) return;
+  try{
+    const res=await api({action:'getSettings',weekMonday:wm});
+    if(res.success&&res.settings){
+      const s=res.settings;
+      if(s.offDays) offDays=s.offDays;
+      if(s.dayOrders) Object.assign(dayOrders,s.dayOrders);
+      if(s.readTypes){
+        Object.entries(s.readTypes).forEach(([k,v])=>{
+          readTypes[k]=typeof v==='object'?v:v;
+        });
+      }
+      if(s.dayExclusions){
+        Object.entries(s.dayExclusions).forEach(([k,v])=>{
+          dayExclusions[k]=new Set(v);
+        });
+      }
+      buildOffDayGrid();
+      renderDayBreakdown();
+    }
+  }catch(e){ console.log('Settings load error',e); }
+}
+
 function generateSchedule(){
   const wm=getWeekMonday();if(!wm){toast('Select a week first.');return;}
   if(!submissions.length){toast('No submissions - click Refresh first.');return;}
@@ -979,7 +1028,7 @@ function generateSchedule(){
 
     out+=`${day.toUpperCase()} ${ds}\n`;
     out+=`Ops Prep ${fmt(11*60)} - ${fmt(12*60)} ET (${fmtPT(11*60)} - ${fmtPT(12*60)} PT)\n`;
-    window._calEvents.push({title:'Ops Prep',start:toISO(11*60),end:toISO(12*60),description:'NewsForce Ops Prep'});
+    window._calEvents.push({title:'Ops Prep',start:toISO(11*60),end:toISO(12*60),description:'NewsForce Ops Prep',color:'lavender'});
 
     let cur=12*60;const notes=[],avail=getOrderedAvail(day).filter(a=>!isExcluded(a.name,day)),scheduledAnchors=new Set();
 
@@ -993,8 +1042,8 @@ function generateSchedule(){
         if(ss+TOT<=w.end&&ss+TOT<=19*60){
           const pe=ss+PREP,re=ss+TOT;
           out+=`\n${anchor.name} | Live to Tape Test / Prep: ${fmt(ss)} - ${fmt(pe)} ET (${fmtPT(ss)} - ${fmtPT(pe)} PT) Read: ${fmt(pe)} - ${fmt(re)} ET (${fmtPT(pe)} - ${fmtPT(re)} PT)\n`;
-          window._calEvents.push({title:anchor.name+' - Tech Check',start:toISO(ss),end:toISO(pe),description:'Live to Tape Tech Check'});
-          window._calEvents.push({title:anchor.name+' - '+(isHalf?'Half Read':'Read'),start:toISO(pe),end:toISO(re),description:'Live to Tape Read'});
+          window._calEvents.push({title:anchor.name+' - Tech Check',start:toISO(ss),end:toISO(pe),description:'Live to Tape Tech Check',color:'radicchio'});
+          window._calEvents.push({title:anchor.name+' - '+(isHalf?'Half Read':'Read'),start:toISO(pe),end:toISO(re),description:'Live to Tape Read',color:'radicchio'});
           cur=re;
 
           // Only add break if there are more anchors that can actually be placed after this one
@@ -1021,11 +1070,11 @@ function generateSchedule(){
             const gap=nextStart-cur;
             if(gap>=45){
               out+=`Ops Break / SOT Check ${fmt(cur)} - ${fmt(cur+45)} ET (${fmtPT(cur)} - ${fmtPT(cur+45)} PT)\n`;
-              window._calEvents.push({title:'Ops Break / SOT Check',start:toISO(cur),end:toISO(cur+45),description:'Ops Break and SOT Check'});
+              window._calEvents.push({title:'Ops Break / SOT Check',start:toISO(cur),end:toISO(cur+45),description:'Ops Break and SOT Check',color:'flamingo'});
               cur+=45;
             } else {
               out+=`Break / SOT Check ${fmt(cur)} - ${fmt(cur+30)} ET (${fmtPT(cur)} - ${fmtPT(cur+30)} PT)\n`;
-              window._calEvents.push({title:'Break / SOT Check',start:toISO(cur),end:toISO(cur+30),description:'SOT Check'});
+              window._calEvents.push({title:'Break / SOT Check',start:toISO(cur),end:toISO(cur+30),description:'SOT Check',color:'flamingo'});
               cur+=30;
             }
           }
@@ -1037,6 +1086,11 @@ function generateSchedule(){
 
     if(!avail.length)out+=`* No anchors available.\n`;
     if(notes.length)out+='\n'+notes.join('\n')+'\n';
+
+    // Add fixed Playback block at 5:00 PM ET
+    out+=`\nPlayback ${fmt(17*60)} - ${fmt(17*60+10)} ET (${fmtPT(17*60)} - ${fmtPT(17*60+10)} PT)\n`;
+    window._calEvents.push({title:'Playback',start:toISO(17*60),end:toISO(17*60+10),description:'LiveStream Countdown / Playback Start',color:'grape'});
+
     out+='\n';
   });
 

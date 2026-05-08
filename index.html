@@ -160,6 +160,9 @@
     .day-read-opt{padding:2px 8px;border-radius:3px;border:1px solid var(--border2);background:transparent;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Barlow',sans-serif;transition:all 0.15s;}
     .day-read-opt.active{background:rgba(200,240,0,0.15);border-color:rgba(200,240,0,0.4);color:var(--accent);}
     .day-read-off.active{background:rgba(255,59,48,0.15)!important;border-color:rgba(255,59,48,0.4)!important;color:var(--red)!important;}
+    .live-btn{padding:2px 8px;border-radius:3px;border:1px solid var(--border2);background:transparent;font-size:10px;font-weight:700;color:var(--muted);cursor:pointer;font-family:'Barlow',sans-serif;transition:all 0.15s;letter-spacing:0.05em;}
+    .live-btn.active{background:rgba(255,159,10,0.15);border-color:rgba(255,159,10,0.4);color:var(--amber);}
+    .live-btn:hover:not(.active){background:var(--dark3);color:var(--white);}
     .exclude-btn{background:none;border:1px solid var(--border2);border-radius:50%;width:16px;height:16px;font-size:10px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s;line-height:1;padding:0;}
     .exclude-btn:hover{background:rgba(255,59,48,0.15);border-color:var(--red);color:var(--red);}
     .confirm-exclude{background:var(--dark3);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;margin-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--off-white);}
@@ -346,7 +349,7 @@
 const SCRIPT_URL="https://script.google.com/a/macros/steadystreamslive.com/s/AKfycbwC4fUr-nHP9ApUwpc5tDomE8ga4Ar7WoNJuWGcNVLuRD1WOKUKX4RCihCeXklvV8Mv/exec";
 const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const TZ_OFF={ET:0,CT:1,MT:2,PT:3,GMT:-5,CET:-6,IST:-10.5,AEST:-16};
-let submissions=[],blockCounts={},roster=[],offDays=[],readTypes={},dayOrders={},dayExclusions={},producerUnlocked=false;
+let submissions=[],blockCounts={},roster=[],offDays=[],readTypes={},dayOrders={},dayExclusions={},liveAnchors={},producerUnlocked=false;
 
 function toast(msg,ms=2500){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),ms);}
 async function api(payload){const r=await fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)});return r.json();}
@@ -534,6 +537,27 @@ function restoreAnchorToDay(anchorName,day){
 
 function isExcluded(anchorName,day){
   return dayExclusions[day]&&dayExclusions[day].has(anchorName);
+}
+
+function toggleLive(anchorName,day,btn){
+  if(!liveAnchors[day])liveAnchors[day]=new Set();
+  if(liveAnchors[day].has(anchorName)){
+    liveAnchors[day].delete(anchorName);
+    btn.classList.remove('active');
+  } else {
+    liveAnchors[day].add(anchorName);
+    btn.classList.add('active');
+    // If set to live, make sure they're not set to Off
+    if(readTypes[anchorName]&&readTypes[anchorName][day]==='off'){
+      readTypes[anchorName][day]='full';
+    }
+  }
+  saveSettings();
+  renderDayBreakdown();
+}
+
+function isAnchorLive(anchorName,day){
+  return liveAnchors[day]&&liveAnchors[day].has(anchorName);
 }
 
 function setDayRead(anchorName,day,type,btn){
@@ -798,6 +822,7 @@ function renderDayBreakdown(){
       const rt=getDayRead(a.name,day);
       const safeId=a.name.replace(/\s/g,'_');
       const detailHTML=buildDetailHTML(a);
+      const isLive=liveAnchors[day]&&liveAnchors[day].has(a.name);
       return `<div class="day-anchor-row" draggable="true"
         ondragstart="onDragStart(event,'${day}','${a.name}')"
         ondragend="onDragEnd(event)"
@@ -810,6 +835,7 @@ function renderDayBreakdown(){
           <button class="day-read-opt ${rt==='full'?'active':''}" onclick="setDayRead('${a.name}','${day}','full',this)">Full 1hr</button>
           <button class="day-read-opt ${rt==='half'?'active':''}" onclick="setDayRead('${a.name}','${day}','half',this)">Half 30m</button>
           <button class="day-read-opt day-read-off ${rt==='off'?'active':''}" onclick="setDayRead('${a.name}','${day}','off',this)">Off</button>
+          <button class="live-btn ${isLive?'active':''}" onclick="toggleLive('${a.name}','${day}',this)">LIVE</button>
         </div>
         <div class="detail-panel" id="detail-${day}-${safeId}">${detailHTML}</div>
       </div>`;
@@ -1016,6 +1042,11 @@ async function loadSettings(){
           dayExclusions[k]=new Set(v);
         });
       }
+      if(s.liveAnchors){
+        Object.entries(s.liveAnchors).forEach(([k,v])=>{
+          liveAnchors[k]=new Set(v);
+        });
+      }
       buildOffDayGrid();
       renderDayBreakdown();
     }
@@ -1040,7 +1071,11 @@ function generateSchedule(){
     out+=`Ops Prep ${fmt(11*60)} - ${fmt(12*60)} ET (${fmtPT(11*60)} - ${fmtPT(12*60)} PT)\n`;
     window._calEvents.push({title:'Ops Prep',start:toISO(11*60),end:toISO(12*60),description:'NewsForce Ops Prep',color:'lavender'});
 
-    let cur=12*60;const notes=[],avail=getOrderedAvail(day).filter(a=>!isExcluded(a.name,day)),scheduledAnchors=new Set();
+    let cur=12*60;const notes=[];
+    const allAvail=getOrderedAvail(day).filter(a=>!isExcluded(a.name,day));
+    const avail=allAvail.filter(a=>!isAnchorLive(a.name,day));
+    const liveAvailAnchors=allAvail.filter(a=>isAnchorLive(a.name,day));
+    const scheduledAnchors=new Set();
 
     avail.forEach((anchor,idx)=>{
       const wins=getWindows(anchor,day);
@@ -1094,8 +1129,24 @@ function generateSchedule(){
       if(!ok)notes.push(`* ${anchor.name} could not be fit on ${day}.`);
     });
 
-    if(!avail.length)out+=`* No anchors available.\n`;
+    if(!avail.length&&!liveAvailAnchors.length)out+=`* No anchors available.\n`;
     if(notes.length)out+='\n'+notes.join('\n')+'\n';
+
+    // LIVE ANCHORS — auto-slotted starting at 5:00 PM ET
+    if(liveAvailAnchors.length){
+      let liveSlot=17*60; // 5:00 PM ET
+      liveAvailAnchors.forEach((anchor,li)=>{
+        const isHalf=getDayRead(anchor.name,day)==='half';
+        const READ=isHalf?30:60,PREP=30;
+        const techStart=liveSlot,techEnd=liveSlot+PREP;
+        const liveStart=techEnd,liveEnd=liveStart+READ;
+        out+=`\n${anchor.name} | Live Tech Check: ${fmt(techStart)} - ${fmt(techEnd)} ET (${fmtPT(techStart)} - ${fmtPT(techEnd)} PT)\n`;
+        out+=`${anchor.name} | LIVE: ${fmt(liveStart)} - ${fmt(liveEnd)} ET (${fmtPT(liveStart)} - ${fmtPT(liveEnd)} PT)\n`;
+        window._calEvents.push({title:anchor.name+' - Live Tech Check',start:toISO(techStart),end:toISO(techEnd),description:'Live Tech Check',color:'radicchio'});
+        window._calEvents.push({title:anchor.name+' - LIVE',start:toISO(liveStart),end:toISO(liveEnd),description:'LIVE Broadcast',color:'tomato'});
+        liveSlot=liveEnd+30; // 30 min break before next live anchor
+      });
+    }
 
     // Add fixed Playback block at 5:00 PM ET
     out+=`\nPlayback ${fmt(17*60)} - ${fmt(17*60+10)} ET (${fmtPT(17*60)} - ${fmtPT(17*60+10)} PT)\n`;

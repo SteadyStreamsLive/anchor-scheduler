@@ -1132,25 +1132,49 @@ function generateSchedule(){
     if(!avail.length&&!liveAvailAnchors.length)out+=`* No anchors available.\n`;
     if(notes.length)out+='\n'+notes.join('\n')+'\n';
 
-    // LIVE ANCHORS — auto-slotted starting at 5:00 PM ET
+    // LIVE ANCHORS — tech check at 4:30 PM, countdown at 5:00 PM, live at 5:10 PM
     if(liveAvailAnchors.length){
-      let liveSlot=17*60; // 5:00 PM ET
+      const TECH_START=16*60+30; // 4:30 PM
+      const COUNTDOWN_START=17*60; // 5:00 PM
+      const LIVE_START=17*60+10; // 5:10 PM
+      let liveEnd=LIVE_START;
+
       liveAvailAnchors.forEach((anchor,li)=>{
         const isHalf=getDayRead(anchor.name,day)==='half';
-        const READ=isHalf?30:60,PREP=30;
-        const techStart=liveSlot,techEnd=liveSlot+PREP;
-        const liveStart=techEnd,liveEnd=liveStart+READ;
-        out+=`\n${anchor.name} | Live Tech Check: ${fmt(techStart)} - ${fmt(techEnd)} ET (${fmtPT(techStart)} - ${fmtPT(techEnd)} PT)\n`;
-        out+=`${anchor.name} | LIVE: ${fmt(liveStart)} - ${fmt(liveEnd)} ET (${fmtPT(liveStart)} - ${fmtPT(liveEnd)} PT)\n`;
-        window._calEvents.push({title:anchor.name+' - Live Tech Check',start:toISO(techStart),end:toISO(techEnd),description:'Live Tech Check',color:'radicchio'});
-        window._calEvents.push({title:anchor.name+' - LIVE',start:toISO(liveStart),end:toISO(liveEnd),description:'LIVE Broadcast',color:'tomato'});
-        liveSlot=liveEnd+30; // 30 min break before next live anchor
-      });
-    }
+        const READ=isHalf?30:60;
 
-    // Add fixed Playback block at 5:00 PM ET
-    out+=`\nPlayback ${fmt(17*60)} - ${fmt(17*60+10)} ET (${fmtPT(17*60)} - ${fmtPT(17*60+10)} PT)\n`;
-    window._calEvents.push({title:'Playback',start:toISO(17*60),end:toISO(17*60+10),description:'LiveStream Countdown / Playback Start',color:'grape'});
+        if(li===0){
+          // First live anchor — tech check at 4:30, countdown at 5:00, live at 5:10
+          out+=`\n${anchor.name} | Live Tech Check: ${fmt(TECH_START)} - ${fmt(COUNTDOWN_START)} ET (${fmtPT(TECH_START)} - ${fmtPT(COUNTDOWN_START)} PT)\n`;
+          out+=`Countdown Timer: ${fmt(COUNTDOWN_START)} - ${fmt(LIVE_START)} ET (${fmtPT(COUNTDOWN_START)} - ${fmtPT(LIVE_START)} PT)\n`;
+          out+=`${anchor.name} | LIVE: ${fmt(LIVE_START)} - ${fmt(LIVE_START+READ)} ET (${fmtPT(LIVE_START)} - ${fmtPT(LIVE_START+READ)} PT)\n`;
+          window._calEvents.push({title:anchor.name+' - Live Tech Check',start:toISO(TECH_START),end:toISO(COUNTDOWN_START),description:'Live Tech Check',color:'radicchio'});
+          window._calEvents.push({title:'Countdown Timer',start:toISO(COUNTDOWN_START),end:toISO(LIVE_START),description:'10 min countdown to live',color:'grape'});
+          window._calEvents.push({title:anchor.name+' - LIVE',start:toISO(LIVE_START),end:toISO(LIVE_START+READ),description:'LIVE Broadcast',color:'tomato'});
+          liveEnd=LIVE_START+READ;
+        } else {
+          // Subsequent live anchors — tech check overlaps with previous anchor's live
+          // Tech check starts when previous anchor goes live
+          const myTechStart=LIVE_START+(li-1)*READ;
+          const myLiveStart=liveEnd;
+          const myLiveEnd=myLiveStart+READ;
+          out+=`\n${anchor.name} | Live Tech Check: ${fmt(myTechStart)} - ${fmt(myLiveStart)} ET (${fmtPT(myTechStart)} - ${fmtPT(myLiveStart)} PT)\n`;
+          out+=`${anchor.name} | LIVE: ${fmt(myLiveStart)} - ${fmt(myLiveEnd)} ET (${fmtPT(myLiveStart)} - ${fmtPT(myLiveEnd)} PT)\n`;
+          window._calEvents.push({title:anchor.name+' - Live Tech Check',start:toISO(myTechStart),end:toISO(myLiveStart),description:'Live Tech Check',color:'radicchio'});
+          window._calEvents.push({title:anchor.name+' - LIVE',start:toISO(myLiveStart),end:toISO(myLiveEnd),description:'LIVE Broadcast',color:'tomato'});
+          liveEnd=myLiveEnd;
+        }
+      });
+
+      // Playback follows after last live anchor
+      out+=`\nPlayback ${fmt(liveEnd)} - ${fmt(liveEnd+10)} ET (${fmtPT(liveEnd)} - ${fmtPT(liveEnd+10)} PT)\n`;
+      window._calEvents.push({title:'Playback',start:toISO(liveEnd),end:toISO(liveEnd+10),description:'LiveStream Countdown / Playback Start',color:'grape'});
+
+    } else {
+      // No live anchors — Playback at 5:00 PM after tape schedule
+      out+=`\nPlayback ${fmt(17*60)} - ${fmt(17*60+10)} ET (${fmtPT(17*60)} - ${fmtPT(17*60+10)} PT)\n`;
+      window._calEvents.push({title:'Playback',start:toISO(17*60),end:toISO(17*60+10),description:'LiveStream Countdown / Playback Start',color:'grape'});
+    }
 
     out+='\n';
   });

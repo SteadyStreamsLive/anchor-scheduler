@@ -298,6 +298,18 @@
       <input type="date" id="week-start" onchange="loadSubmissions()" />
       <button class="ghost-btn" onclick="loadSubmissions()">Refresh</button>
     </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;margin-bottom:4px;flex-wrap:wrap;">
+      <label style="font-size:12px;color:var(--muted);font-weight:500;">Schedule start</label>
+      <select id="schedule-start-time" style="padding:6px 10px;font-size:13px;font-family:'Barlow',sans-serif;background:var(--dark2);border:1px solid var(--border2);border-radius:4px;color:var(--white);outline:none;" onchange="saveSettings()">
+        <option value="11:00">11:00 AM (default)</option>
+        <option value="10:00">10:00 AM (1hr early)</option>
+        <option value="09:00">9:00 AM (2hrs early)</option>
+        <option value="10:30">10:30 AM (30min early)</option>
+        <option value="11:30">11:30 AM (30min late)</option>
+        <option value="12:00">12:00 PM (1hr late)</option>
+      </select>
+      <span style="font-size:11px;color:var(--muted);">Shifts ops prep and anchor slots</span>
+    </div>
 
     <div class="section-label">Off days this week</div>
     <div class="offday-grid" id="offday-grid"></div>
@@ -1028,6 +1040,7 @@ async function saveSettings(){
   const wm=getWeekMonday(); if(!wm){console.log('saveSettings: no week set');return;}
   const settings={
     offDays: offDays,
+    scheduleStart: document.getElementById('schedule-start-time')?.value||'11:00',
     dayOrders: Object.fromEntries(Object.entries(dayOrders).map(([k,v])=>[k,v])),
     readTypes: Object.fromEntries(Object.entries(readTypes).map(([k,v])=>[k,typeof v==='object'?Object.fromEntries(Object.entries(v)):v])),
     dayExclusions: Object.fromEntries(Object.entries(dayExclusions).map(([k,v])=>[k,[...v]]))
@@ -1065,10 +1078,22 @@ async function loadSettings(){
           liveAnchors[k]=new Set(v);
         });
       }
+      if(s.scheduleStart){
+        const sel=document.getElementById('schedule-start-time');
+        if(sel)sel.value=s.scheduleStart;
+      }
       buildOffDayGrid();
       renderDayBreakdown();
     }
   }catch(e){ console.log('Settings load error',e); }
+}
+
+function getScheduleStart(){
+  const sel=document.getElementById('schedule-start-time');
+  if(!sel)return 11*60;
+  const val=sel.value||'11:00';
+  const[h,m]=val.split(':').map(Number);
+  return h*60+m;
 }
 
 function generateSchedule(){
@@ -1086,10 +1111,11 @@ function generateSchedule(){
     if(offDays.includes(day)){out+=`${day.toUpperCase()} ${ds}\nOFF\n\n`;return;}
 
     out+=`${day.toUpperCase()} ${ds}\n`;
-    out+=`Ops Prep ${fmt(11*60)} - ${fmt(12*60)} ET (${fmtPT(11*60)} - ${fmtPT(12*60)} PT)\n`;
-    window._calEvents.push({title:'Ops Prep',start:toISO(11*60),end:toISO(12*60),description:'NewsForce Ops Prep',color:'lavender'});
+    const SCHED_START=getScheduleStart(),OPS_PREP_END_TIME=SCHED_START+60;
+    out+=`Ops Prep ${fmt(SCHED_START)} - ${fmt(OPS_PREP_END_TIME)} ET (${fmtPT(SCHED_START)} - ${fmtPT(OPS_PREP_END_TIME)} PT)\n`;
+    window._calEvents.push({title:'Ops Prep',start:toISO(SCHED_START),end:toISO(OPS_PREP_END_TIME),description:'NewsForce Ops Prep',color:'lavender'});
 
-    let cur=12*60;const notes=[];
+    let cur=OPS_PREP_END_TIME;const notes=[];
     const allAvail=getOrderedAvail(day).filter(a=>!isExcluded(a.name,day));
     const avail=allAvail.filter(a=>!isAnchorLive(a.name,day));
     const liveAvailAnchors=allAvail.filter(a=>isAnchorLive(a.name,day));

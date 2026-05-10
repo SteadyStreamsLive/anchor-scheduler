@@ -638,7 +638,8 @@ function getOrderedAvail(day){
   });
 
   function simulateDay(orderedAnchors){
-    let cur=12*60, fitted=0, endTime=12*60;
+    const schedStart=getScheduleStart()+60;
+    let cur=schedStart, fitted=0, endTime=schedStart;
     for(let i=0;i<orderedAnchors.length;i++){
       const anchor=orderedAnchors[i];
       const wins=getWindows(anchor,day);
@@ -683,8 +684,8 @@ function getOrderedAvail(day){
       const aEu=EU_TZ.includes(a.tz)?0:1, bEu=EU_TZ.includes(b.tz)?0:1;
       if(aEu!==bEu) return aEu-bEu;
       const aw=getWindows(a,day),bw=getWindows(b,day);
-      const aStart=aw?Math.max(12*60,aw[0].start):19*60;
-      const bStart=bw?Math.max(12*60,bw[0].start):19*60;
+      const aStart=aw?Math.max(getScheduleStart()+60,aw[0].start):19*60;
+      const bStart=bw?Math.max(getScheduleStart()+60,bw[0].start):19*60;
       return aStart-bStart;
     });
   }
@@ -749,7 +750,7 @@ function onDragOver(e,day,name){if(dragDay!==day||dragSrc===name)return;e.preven
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
 function simulateOrder(orderedAnchors,day){
   // Strictly simulate the schedule and return list of anchor names that cannot be placed
-  let cur=12*60;const conflicts=[];
+  let cur=getScheduleStart()+60;const conflicts=[]; // start after ops prep
   for(let i=0;i<orderedAnchors.length;i++){
     const anchor=orderedAnchors[i];
     const wins=getWindows(anchor,day);

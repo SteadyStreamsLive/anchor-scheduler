@@ -864,13 +864,7 @@ function renderDayBreakdown(){
         <div class="day-row-date">${ds}</div>
         ${dayOrders[day]?`<button onclick="resetDayOrder('${day}')" style="font-size:10px;padding:2px 8px;border-radius:3px;border:1px solid var(--amber);background:transparent;color:var(--amber);cursor:pointer;font-family:'Barlow',sans-serif;">Manual — reset to auto</button>`:'<span style="font-size:10px;color:var(--muted);">Auto-ordered</span>'}
         <select onchange="setDayScheduleStart('${day}',this.value)" style="font-size:10px;padding:2px 6px;border-radius:3px;border:1px solid var(--border2);background:var(--dark2);color:var(--muted);font-family:'Barlow',sans-serif;cursor:pointer;">
-          <option value="11:00" ${!dayScheduleStart['${day}']||dayScheduleStart['${day}']==='11:00'?'selected':''}>11:00 AM</option>
-          <option value="10:30" ${dayScheduleStart['${day}']==='10:30'?'selected':''}>10:30 AM</option>
-          <option value="10:00" ${dayScheduleStart['${day}']==='10:00'?'selected':''}>10:00 AM</option>
-          <option value="09:30" ${dayScheduleStart['${day}']==='09:30'?'selected':''}>9:30 AM</option>
-          <option value="09:00" ${dayScheduleStart['${day}']==='09:00'?'selected':''}>9:00 AM</option>
-          <option value="11:30" ${dayScheduleStart['${day}']==='11:30'?'selected':''}>11:30 AM</option>
-          <option value="12:00" ${dayScheduleStart['${day}']==='12:00'?'selected':''}>12:00 PM</option>
+          ${['11:00','10:30','10:00','09:30','09:00','11:30','12:00'].map(t=>{const labels={'11:00':'11:00 AM','10:30':'10:30 AM','10:00':'10:00 AM','09:30':'9:30 AM','09:00':'9:00 AM','11:30':'11:30 AM','12:00':'12:00 PM'};const cur=dayScheduleStart[day]||'11:00';return '<option value="'+t+'"'+(cur===t?' selected':'')+'>'+labels[t]+'</option>';}).join('')}
         </select>
         <div class="day-count ${cc}" style="margin-left:auto;">${label}</div>
       </div>
